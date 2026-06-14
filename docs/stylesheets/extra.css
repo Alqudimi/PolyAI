@@ -1,0 +1,122 @@
+/* PolyAI Documentation — Extra Styles */
+
+/* Brand colours */
+:root {
+  --polyai-primary: #4051b5;
+  --polyai-accent: #2979ff;
+  --polyai-bg-light: #f8f9fa;
+  --polyai-code-bg: #1e1e2e;
+}
+
+/* Hero section on the home page */
+.md-typeset .hero {
+  text-align: center;
+  padding: 2rem 0 1rem;
+}
+
+.md-typeset .hero h1 {
+  font-size: 2.5rem;
+  font-weight: 700;
+}
+
+.md-typeset .hero .tagline {
+  font-size: 1.2rem;
+  color: var(--md-default-fg-color--light);
+  margin: 0.5rem 0 1.5rem;
+}
+
+/* Provider badge grid */
+.provider-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(200px, 1fr));
+  gap: 1rem;
+  margin: 1.5rem 0;
+}
+
+.provider-card {
+  border: 1px solid var(--md-default-fg-color--lightest);
+  border-radius: 8px;
+  padding: 1rem;
+  text-align: center;
+}
+
+.provider-card .badge-free {
+  background: #e8f5e9;
+  color: #2e7d32;
+  border-radius: 4px;
+  padding: 2px 8px;
+  font-size: 0.8rem;
+  font-weight: 600;
+}
+
+/* Code block enhancements */
+.md-typeset pre > code {
+  font-size: 0.85rem;
+}
+
+/* Admonition icons */
+.md-typeset .admonition.provider {
+  border-color: var(--polyai-primary);
+}
+
+.md-typeset .admonition.provider > .admonition-title::before {
+  content: "🤖";
+  margin-right: 0.5rem;
+}
+
+/* Status badges in tables */
+.md-typeset table td:has(.status-yes) { color: #2e7d32; }
+.md-typeset table td:has(.status-no)  { color: #c62828; }
+
+/* Navigation improvements */
+.md-nav__link--active {
+  font-weight: 600;
+}
+
+/* Footer */
+.md-footer-meta {
+  background-color: var(--polyai-primary);
+}
+
+/* Inline code — slightly more visible */
+.md-typeset code {
+  background-color: rgba(64, 81, 181, 0.08);
+  border-radius: 3px;
+  padding: 0 4px;
+}
+
+/* Dark mode adjustments */
+[data-md-color-scheme="slate"] .md-typeset code {
+  background-color: rgba(41, 121, 255, 0.12);
+}
+
+[data-md-color-scheme="slate"] .provider-card .badge-free {
+  background: #1b5e20;
+  color: #a5d6a7;
+}
+
+/* Responsive tables */
+.md-typeset table {
+  font-size: 0.85rem;
+}
+
+@media screen and (max-width: 768px) {
+  .md-typeset table {
+    display: block;
+    overflow-x: auto;
+  }
+}
+
+/* API reference parameter tables */
+.md-typeset .api-table th {
+  white-space: nowrap;
+}
+
+/* Highlight important notes */
+.md-typeset .important-note {
+  background: rgba(255, 193, 7, 0.1);
+  border-left: 4px solid #ffc107;
+  padding: 0.75rem 1rem;
+  border-radius: 0 4px 4px 0;
+  margin: 1rem 0;
+}
