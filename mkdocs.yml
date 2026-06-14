@@ -1,0 +1,133 @@
+site_name: PolyAI Documentation
+site_description: Production-grade unified Python SDK for OVHcloud AI Endpoints, Pollinations.AI, mlvoca, and DevToolbox API.
+site_author: Abdulaziz Alqudimi
+site_url: https://alqudimi.github.io/PolyAI/
+repo_name: Alqudimi/PolyAI
+repo_url: https://github.com/Alqudimi/PolyAI
+edit_uri: edit/main/docs/
+
+copyright: "Copyright &copy; 2026 Abdulaziz Alqudimi — MIT License"
+
+theme:
+  name: material
+  language: en
+  palette:
+    - scheme: default
+      primary: indigo
+      accent: blue
+      toggle:
+        icon: material/brightness-7
+        name: Switch to dark mode
+    - scheme: slate
+      primary: indigo
+      accent: blue
+      toggle:
+        icon: material/brightness-4
+        name: Switch to light mode
+  features:
+    - navigation.tabs
+    - navigation.tabs.sticky
+    - navigation.sections
+    - navigation.expand
+    - navigation.path
+    - navigation.top
+    - navigation.footer
+    - search.highlight
+    - search.share
+    - search.suggest
+    - content.tabs.link
+    - content.code.annotate
+    - content.code.copy
+    - toc.follow
+  icon:
+    repo: fontawesome/brands/github
+    logo: material/robot
+
+plugins:
+  - search:
+      lang: en
+  - tags
+
+markdown_extensions:
+  - admonition
+  - pymdownx.details
+  - pymdownx.superfences:
+      custom_fences:
+        - name: mermaid
+          class: mermaid
+          format: !!python/name:pymdownx.superfences.fence_code_format
+  - pymdownx.highlight:
+      anchor_linenums: true
+      line_spans: __span
+      pygments_lang_class: true
+  - pymdownx.inlinehilite
+  - pymdownx.snippets
+  - pymdownx.tabbed:
+      alternate_style: true
+  - pymdownx.emoji:
+      emoji_index: !!python/name:material.extensions.emoji.twemoji
+      emoji_generator: !!python/name:material.extensions.emoji.to_svg
+  - toc:
+      permalink: true
+  - tables
+  - attr_list
+  - md_in_html
+  - footnotes
+
+nav:
+  - Home: index.md
+  - Getting Started:
+    - Installation: user/installation.md
+    - Quick Start: index.md#quick-start
+    - Configuration: user/configuration.md
+  - User Guide:
+    - Best Practices: user/best-practices.md
+    - Security Best Practices: user/security-best-practices.md
+    - Performance: user/performance.md
+    - Production Guide: user/production-guide.md
+    - Migration Guide: user/migration-guide.md
+  - Tutorials:
+    - "01 — First Chat": tutorials/01-first-chat.md
+    - "02 — Streaming": tutorials/02-streaming.md
+    - "03 — Function Calling": tutorials/03-function-calling.md
+    - "04 — Vision": tutorials/04-vision.md
+    - "05 — Embeddings": tutorials/05-embeddings.md
+    - "06 — Production Deployment": tutorials/06-production.md
+    - "07 — Custom Provider": tutorials/07-custom-provider.md
+  - API Reference:
+    - Overview: api/overview.md
+    - Client: api/client.md
+    - Exceptions: api/exceptions.md
+    - Types: api/types.md
+    - Providers:
+      - OVHcloud: api/providers/ovhcloud.md
+      - Pollinations: api/providers/pollinations.md
+      - mlvoca: api/providers/mlvoca.md
+      - DevToolbox: api/providers/devtoolbox.md
+  - Developer Guide:
+    - Architecture: dev/architecture.md
+    - Adding Providers: dev/adding-providers.md
+    - Testing: dev/testing.md
+    - Coding Standards: dev/coding-standards.md
+  - Project:
+    - Features: ../FEATURES.md
+    - Roadmap: ../ROADMAP.md
+    - Changelog: ../CHANGELOG.md
+    - Security Policy: ../SECURITY.md
+    - Contributing: ../CONTRIBUTING.md
+    - FAQ: ../FAQ.md
+    - Troubleshooting: ../TROUBLESHOOTING.md
+    - License Guide: ../LICENSE_GUIDE.md
+
+extra:
+  social:
+    - icon: fontawesome/brands/github
+      link: https://github.com/Alqudimi/PolyAI
+    - icon: fontawesome/brands/python
+      link: https://pypi.org/project/polyai/
+  analytics:
+    provider: google
+    property: G-XXXXXXXXXX  # replace with actual GA4 property ID
+
+extra_css:
+  - stylesheets/extra.css
