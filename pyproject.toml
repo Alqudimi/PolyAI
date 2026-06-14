@@ -1,0 +1,148 @@
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+[project]
+name = "polyai"
+version = "1.0.0"
+description = "Production-grade unified Python SDK for OVHcloud AI Endpoints, Pollinations.AI, mlvoca, and DevToolbox API"
+readme = "README.md"
+requires-python = ">=3.9"
+license = { text = "MIT" }
+authors = [
+    { name = "PolyAI contributors" },
+]
+keywords = [
+    "ai", "llm", "ovhcloud", "pollinations", "mlvoca", "devtoolbox",
+    "generative-ai", "sdk", "embeddings", "polyai", "chatbot",
+]
+classifiers = [
+    "Development Status :: 5 - Production/Stable",
+    "Intended Audience :: Developers",
+    "License :: OSI Approved :: MIT License",
+    "Operating System :: OS Independent",
+    "Programming Language :: Python :: 3",
+    "Programming Language :: Python :: 3.9",
+    "Programming Language :: Python :: 3.10",
+    "Programming Language :: Python :: 3.11",
+    "Programming Language :: Python :: 3.12",
+    "Topic :: Software Development :: Libraries :: Python Modules",
+    "Topic :: Scientific/Engineering :: Artificial Intelligence",
+    "Typing :: Typed",
+]
+dependencies = [
+    "httpx>=0.25.0",
+]
+
+[project.optional-dependencies]
+dev = [
+    "pytest>=7.4.0",
+    "pytest-asyncio>=0.23.0",
+    "pytest-cov>=4.1.0",
+    "pytest-mock>=3.12.0",
+    "respx>=0.20.0",
+    "ruff>=0.1.0",
+    "mypy>=1.7.0",
+    "black>=23.0.0",
+    "pre-commit>=3.5.0",
+]
+docs = [
+    "mkdocs>=1.5.0",
+    "mkdocs-material>=9.4.0",
+    "mkdocstrings[python]>=0.24.0",
+]
+
+[project.urls]
+Homepage = "https://github.com/polyai-sdk/polyai-python"
+Documentation = "https://polyai-sdk.readthedocs.io"
+Repository = "https://github.com/polyai-sdk/polyai-python"
+"Bug Tracker" = "https://github.com/polyai-sdk/polyai-python/issues"
+Changelog = "https://github.com/polyai-sdk/polyai-python/blob/main/CHANGELOG.md"
+
+[tool.hatch.build.targets.wheel]
+packages = ["polyai"]
+
+[tool.hatch.build.targets.sdist]
+include = [
+    "/polyai",
+    "/tests",
+    "/examples",
+    "/docs",
+    "/README.md",
+    "/CHANGELOG.md",
+    "/LICENSE",
+]
+
+# ── Pytest ─────────────────────────────────────────────────────────────────
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+asyncio_mode = "auto"
+addopts = [
+    "--strict-markers",
+    "-ra",
+    "--tb=short",
+]
+markers = [
+    "integration: marks tests as integration tests (deselect with '-m \"not integration\"')",
+    "slow: marks tests as slow",
+]
+
+# ── Coverage ───────────────────────────────────────────────────────────────
+
+[tool.coverage.run]
+source = ["polyai"]
+branch = true
+omit = ["tests/*", "examples/*"]
+
+[tool.coverage.report]
+exclude_lines = [
+    "pragma: no cover",
+    "def __repr__",
+    "raise NotImplementedError",
+    "if TYPE_CHECKING:",
+    "@(abc\\.)?abstractmethod",
+]
+show_missing = true
+precision = 2
+
+# ── Ruff (linter + formatter) ──────────────────────────────────────────────
+
+[tool.ruff]
+target-version = "py39"
+line-length = 100
+select = [
+    "E",   # pycodestyle errors
+    "W",   # pycodestyle warnings
+    "F",   # pyflakes
+    "I",   # isort
+    "B",   # flake8-bugbear
+    "C4",  # flake8-comprehensions
+    "UP",  # pyupgrade
+    "SIM", # flake8-simplify
+    "TCH", # flake8-type-checking
+]
+ignore = [
+    "E501",   # line length — handled by formatter
+    "B008",   # function calls in default arguments
+    "SIM108", # ternary operator
+]
+
+[tool.ruff.isort]
+known-first-party = ["polyai"]
+
+# ── Black ─────────────────────────────────────────────────────────────────
+
+[tool.black]
+line-length = 100
+target-version = ["py39", "py310", "py311", "py312"]
+
+# ── MyPy ─────────────────────────────────────────────────────────────────
+
+[tool.mypy]
+python_version = "3.9"
+strict = true
+ignore_missing_imports = true
+warn_return_any = false
+warn_unused_ignores = true
+show_error_codes = true
