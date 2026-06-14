@@ -1,7 +1,5 @@
 <div align="center">
 
-<img src="https://raw.githubusercontent.com/Alqudimi/PolyAI/main/docs/assets/logo.png" alt="PolyAI Logo" width="120" />
-
 # PolyAI
 
 **Production-grade unified Python SDK for multiple AI providers.**
