@@ -1,0 +1,176 @@
+name: Pull Request Checks
+
+on:
+  pull_request:
+    types: [opened, edited, synchronize, reopened, ready_for_review]
+
+permissions:
+  contents: read
+  pull-requests: write
+  issues: write
+
+jobs:
+  # ─────────────────────────────────────────────
+  # JOB 1 — Enforce Conventional Commits on PR title
+  # ─────────────────────────────────────────────
+  conventional-title:
+    name: PR Title (Conventional Commits)
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - name: Check PR title format
+        uses: amannn/action-semantic-pull-request@v5
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        with:
+          types: |
+            feat
+            fix
+            docs
+            style
+            refactor
+            perf
+            test
+            build
+            ci
+            chore
+            revert
+          requireScope: false
+          subjectPattern: ^.{1,72}$
+          subjectPatternError: |
+            The PR title must be under 72 characters.
+
+  # ─────────────────────────────────────────────
+  # JOB 2 — PR size labeller
+  # ─────────────────────────────────────────────
+  size-label:
+    name: PR Size Label
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    permissions:
+      pull-requests: write
+    steps:
+      - uses: codelytv/pr-size-labeler@v1
+        with:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          xs_max_size: 10
+          s_max_size: 50
+          m_max_size: 200
+          l_max_size: 800
+          fail_if_xl: false
+
+  # ─────────────────────────────────────────────
+  # JOB 3 — Detect breaking changes in public API
+  # ─────────────────────────────────────────────
+  api-compat:
+    name: Public API Compatibility
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+
+      - name: Install dependencies
+        run: pip install -e .
+
+      - name: Snapshot public API surface
+        run: |
+          python3 - <<'EOF'
+          import polyai, inspect, json, sys
+          from types import ModuleType
+
+          def get_api(mod, prefix=""):
+              api = {}
+              for name in getattr(mod, "__all__", []):
+                  obj = getattr(mod, name, None)
+                  if obj is None:
+                      continue
+                  key = f"{prefix}.{name}" if prefix else name
+                  if inspect.isclass(obj):
+                      api[key] = {
+                          "type": "class",
+                          "methods": sorted([
+                              m for m in dir(obj)
+                              if not m.startswith("_") and callable(getattr(obj, m, None))
+                          ]),
+                      }
+                  else:
+                      api[key] = {"type": type(obj).__name__}
+              return api
+
+          api = get_api(polyai)
+          print(json.dumps(api, indent=2))
+          with open("pr-api-snapshot.json", "w") as f:
+              json.dump(api, f, indent=2)
+          EOF
+
+      - name: Upload API snapshot
+        uses: actions/upload-artifact@v4
+        with:
+          name: pr-api-snapshot
+          path: pr-api-snapshot.json
+          retention-days: 7
+
+  # ─────────────────────────────────────────────
+  # JOB 4 — Coverage delta (warn if coverage drops)
+  # ─────────────────────────────────────────────
+  coverage-delta:
+    name: Coverage Delta
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+
+      - name: Install uv
+        uses: astral-sh/setup-uv@v3
+        with:
+          enable-cache: true
+
+      - name: Install dependencies
+        run: uv pip install --system -e ".[dev]"
+
+      - name: Run tests with coverage
+        run: |
+          pytest tests/unit \
+            --cov=polyai \
+            --cov-report=json \
+            --cov-report=term-missing \
+            -q
+
+      - name: Coverage report comment
+        uses: py-cov-action/python-coverage-comment-action@v3
+        with:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          MINIMUM_GREEN: 90
+          MINIMUM_ORANGE: 75
+
+  # ─────────────────────────────────────────────
+  # JOB 5 — Dependency review (new vuln check)
+  # ─────────────────────────────────────────────
+  dependency-review:
+    name: Dependency Review
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    permissions:
+      contents: read
+      pull-requests: write
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Dependency Review
+        uses: actions/dependency-review-action@v4
+        with:
+          fail-on-severity: high
+          comment-summary-in-pr: always
+          deny-licenses: GPL-3.0, AGPL-3.0

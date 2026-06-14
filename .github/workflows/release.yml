@@ -1,0 +1,313 @@
+name: Release
+
+on:
+  push:
+    tags:
+      - "v[0-9]+.[0-9]+.[0-9]+"
+      - "v[0-9]+.[0-9]+.[0-9]+-rc[0-9]+"
+      - "v[0-9]+.[0-9]+.[0-9]+-beta[0-9]+"
+      - "v[0-9]+.[0-9]+.[0-9]+-alpha[0-9]+"
+
+permissions:
+  contents: write      # create GitHub release
+  id-token: write      # PyPI trusted publishing (OIDC)
+  actions: read
+
+env:
+  PYTHON_DEFAULT: "3.11"
+
+jobs:
+  # ─────────────────────────────────────────────
+  # JOB 1 — Validate tag matches package version
+  # ─────────────────────────────────────────────
+  validate-version:
+    name: Validate Tag ↔ Package Version
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    outputs:
+      version: ${{ steps.get-version.outputs.version }}
+      prerelease: ${{ steps.get-version.outputs.prerelease }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: ${{ env.PYTHON_DEFAULT }}
+
+      - name: Get version info
+        id: get-version
+        run: |
+          TAG="${GITHUB_REF#refs/tags/v}"
+          PKG_VERSION=$(python -c "
+          import tomllib
+          with open('pyproject.toml','rb') as f:
+              d = tomllib.load(f)
+          print(d['project']['version'])
+          ")
+          echo "Tag version   : $TAG"
+          echo "Package version: $PKG_VERSION"
+          if [ "$TAG" != "$PKG_VERSION" ]; then
+            echo "::error::Tag v$TAG does not match pyproject.toml version $PKG_VERSION"
+            exit 1
+          fi
+          echo "version=$TAG" >> "$GITHUB_OUTPUT"
+          if echo "$TAG" | grep -qE '(alpha|beta|rc)'; then
+            echo "prerelease=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "prerelease=false" >> "$GITHUB_OUTPUT"
+          fi
+
+  # ─────────────────────────────────────────────
+  # JOB 2 — Run full test suite before release
+  # ─────────────────────────────────────────────
+  test-before-release:
+    name: Test Suite (pre-release gate)
+    needs: validate-version
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: ${{ env.PYTHON_DEFAULT }}
+
+      - name: Install uv
+        uses: astral-sh/setup-uv@v3
+        with:
+          enable-cache: true
+
+      - name: Install dependencies
+        run: uv pip install --system -e ".[dev]"
+
+      - name: Run unit tests
+        run: pytest tests/unit -v --tb=short -q
+
+  # ─────────────────────────────────────────────
+  # JOB 3 — Build distribution
+  # ─────────────────────────────────────────────
+  build:
+    name: Build Distribution
+    needs: test-before-release
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: ${{ env.PYTHON_DEFAULT }}
+
+      - name: Install build tools
+        run: pip install build twine
+
+      - name: Build wheel + sdist
+        run: python -m build
+
+      - name: Verify distribution
+        run: twine check dist/* --strict
+
+      - name: Inspect wheel
+        run: |
+          pip install wheel
+          python -c "
+          import zipfile, glob
+          whl = glob.glob('dist/*.whl')[0]
+          print(f'Wheel: {whl}')
+          with zipfile.ZipFile(whl) as z:
+              for n in sorted(z.namelist()):
+                  print(f'  {n}')
+          "
+
+      - name: Upload build artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: dist
+          path: dist/
+          retention-days: 30
+
+  # ─────────────────────────────────────────────
+  # JOB 4 — Publish to TestPyPI first
+  # ─────────────────────────────────────────────
+  publish-testpypi:
+    name: Publish → TestPyPI
+    needs: build
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    environment:
+      name: testpypi
+      url: https://test.pypi.org/p/polyai
+    permissions:
+      id-token: write
+    steps:
+      - uses: actions/download-artifact@v4
+        with:
+          name: dist
+          path: dist/
+
+      - name: Publish to TestPyPI (OIDC)
+        uses: pypa/gh-action-pypi-publish@release/v1
+        with:
+          repository-url: https://test.pypi.org/legacy/
+          skip-existing: true
+          print-hash: true
+
+  # ─────────────────────────────────────────────
+  # JOB 5 — Smoke-test the TestPyPI install
+  # ─────────────────────────────────────────────
+  verify-testpypi:
+    name: Verify TestPyPI Install
+    needs: publish-testpypi
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/setup-python@v5
+        with:
+          python-version: ${{ env.PYTHON_DEFAULT }}
+
+      - name: Install from TestPyPI and smoke-test
+        env:
+          VERSION: ${{ needs.validate-version.outputs.version }}
+        run: |
+          # Wait for TestPyPI index to propagate
+          sleep 30
+          pip install \
+            --index-url https://test.pypi.org/simple/ \
+            --extra-index-url https://pypi.org/simple/ \
+            "polyai==$VERSION"
+          python -c "
+          from polyai import Client, AsyncClient
+          from polyai.exceptions import UniversalAIError
+          print('TestPyPI install OK')
+          "
+
+  # ─────────────────────────────────────────────
+  # JOB 6 — Publish to Production PyPI
+  # ─────────────────────────────────────────────
+  publish-pypi:
+    name: Publish → PyPI
+    needs: [build, verify-testpypi]
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    environment:
+      name: pypi
+      url: https://pypi.org/p/polyai
+    permissions:
+      id-token: write
+    steps:
+      - uses: actions/download-artifact@v4
+        with:
+          name: dist
+          path: dist/
+
+      - name: Publish to PyPI (OIDC trusted publishing)
+        uses: pypa/gh-action-pypi-publish@release/v1
+        with:
+          print-hash: true
+          attestations: true
+
+  # ─────────────────────────────────────────────
+  # JOB 7 — Create GitHub Release
+  # ─────────────────────────────────────────────
+  github-release:
+    name: Create GitHub Release
+    needs: [publish-pypi, validate-version]
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - uses: actions/download-artifact@v4
+        with:
+          name: dist
+          path: dist/
+
+      - name: Extract changelog section
+        id: changelog
+        env:
+          VERSION: ${{ needs.validate-version.outputs.version }}
+        run: |
+          python3 - <<'PYEOF'
+          import os, re
+          version = os.environ['VERSION']
+          text = open('CHANGELOG.md').read()
+          # Match section between this version header and the next
+          pattern = rf'## \[{re.escape(version)}\][^\n]*\n(.*?)(?=\n## \[|\Z)'
+          m = re.search(pattern, text, re.DOTALL)
+          notes = m.group(1).strip() if m else f'Release v{version}'
+          with open(os.environ['GITHUB_OUTPUT'], 'a') as f:
+              f.write('notes<<NOTES_EOF\n')
+              f.write(notes + '\n')
+              f.write('NOTES_EOF\n')
+          PYEOF
+
+      - name: Generate SHA256 checksums
+        run: |
+          cd dist
+          sha256sum * > SHA256SUMS.txt
+          cat SHA256SUMS.txt
+
+      - name: Create GitHub Release
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: ${{ github.ref_name }}
+          name: "PolyAI v${{ needs.validate-version.outputs.version }}"
+          body: |
+            ## What's Changed
+
+            ${{ steps.changelog.outputs.notes }}
+
+            ---
+
+            ## Installation
+
+            ```bash
+            pip install "polyai==${{ needs.validate-version.outputs.version }}"
+            ```
+
+            ## Checksums
+
+            See `SHA256SUMS.txt` attached below.
+          files: |
+            dist/*.whl
+            dist/*.tar.gz
+            dist/SHA256SUMS.txt
+          draft: false
+          prerelease: ${{ needs.validate-version.outputs.prerelease }}
+          generate_release_notes: true
+          make_latest: ${{ needs.validate-version.outputs.prerelease == 'false' }}
+
+  # ─────────────────────────────────────────────
+  # JOB 8 — Post-release verification
+  # ─────────────────────────────────────────────
+  post-release-verify:
+    name: Post-release PyPI Verification
+    needs: [publish-pypi, validate-version]
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/setup-python@v5
+        with:
+          python-version: ${{ env.PYTHON_DEFAULT }}
+
+      - name: Install from production PyPI and verify
+        env:
+          VERSION: ${{ needs.validate-version.outputs.version }}
+        run: |
+          # Wait for CDN propagation
+          sleep 60
+          pip install "polyai==$VERSION"
+          python -c "
+          import polyai
+          assert polyai.__version__ == '$VERSION', f'Version mismatch: {polyai.__version__}'
+          from polyai import Client, AsyncClient, ClientConfig
+          from polyai.types import ChatResponse, EmbeddingResponse, ImageResponse
+          from polyai.exceptions import UniversalAIError, RateLimitError
+          print(f'PyPI release v{polyai.__version__} verified OK')
+          "

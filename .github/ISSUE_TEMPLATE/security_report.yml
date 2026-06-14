@@ -1,0 +1,53 @@
+name: "🔒 Security Report"
+description: "⚠️ DO NOT use this template for security vulnerabilities. See SECURITY.md."
+title: "[Security]: "
+labels: ["security"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        ## ⚠️ Important Security Notice
+
+        **If you believe you have found a security vulnerability, please do NOT open a public GitHub Issue.**
+
+        Instead, use one of these private channels:
+
+        1. **[GitHub Private Vulnerability Reporting](https://github.com/Alqudimi/PolyAI/security/advisories/new)** ← Recommended
+        2. **Email the maintainer** — see [SECURITY.md](../../SECURITY.md) for contact details
+
+        ---
+
+        This public template is for **non-sensitive security questions** such as:
+        - Questions about PolyAI's security practices
+        - General security architecture questions
+        - Suggestions for security improvements (non-critical)
+
+  - type: dropdown
+    id: type
+    attributes:
+      label: "Type of Security Topic"
+      options:
+        - Question about security practices
+        - Security improvement suggestion (non-critical)
+        - Question about API key handling
+        - Question about TLS/HTTPS
+        - Other (non-sensitive)
+    validations:
+      required: true
+
+  - type: textarea
+    id: description
+    attributes:
+      label: "Description"
+      description: "Describe your security question or suggestion"
+      placeholder: "I have a question about how PolyAI handles..."
+    validations:
+      required: true
+
+  - type: checkboxes
+    id: confirmation
+    attributes:
+      label: "Confirmation"
+      options:
+        - label: "This is NOT a sensitive vulnerability report. I understand vulnerabilities should be reported privately via SECURITY.md."
+          required: true

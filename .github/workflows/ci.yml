@@ -1,0 +1,260 @@
+name: CI
+
+on:
+  push:
+    branches: [main, develop, "release/**", "hotfix/**"]
+  pull_request:
+    branches: [main, develop]
+  workflow_dispatch:
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+env:
+  PYTHON_DEFAULT: "3.11"
+  UV_CACHE_DIR: /tmp/.uv-cache
+
+defaults:
+  run:
+    shell: bash
+
+# ─────────────────────────────────────────────
+# JOB 1 — Lint & static analysis
+# ─────────────────────────────────────────────
+jobs:
+  lint:
+    name: Lint & Type Check
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: ${{ env.PYTHON_DEFAULT }}
+
+      - name: Install uv
+        uses: astral-sh/setup-uv@v3
+        with:
+          enable-cache: true
+          cache-dependency-glob: "pyproject.toml"
+
+      - name: Install dependencies
+        run: uv pip install --system -e ".[dev]"
+
+      - name: Ruff — lint
+        run: ruff check polyai tests --output-format=github
+
+      - name: Ruff — format check
+        run: ruff format --check polyai tests
+
+      - name: MyPy — type check
+        run: mypy polyai --ignore-missing-imports --no-error-summary
+
+      - name: Check for leftover debug statements
+        run: |
+          if grep -rn "breakpoint()\|pdb.set_trace\|import pdb" polyai/; then
+            echo "::error::Debug statements found in source"
+            exit 1
+          fi
+
+  # ─────────────────────────────────────────────
+  # JOB 2 — Unit tests (matrix)
+  # ─────────────────────────────────────────────
+  test:
+    name: Unit Tests / Python ${{ matrix.python-version }} / ${{ matrix.os }}
+    needs: lint
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 15
+    strategy:
+      fail-fast: false
+      matrix:
+        python-version: ["3.9", "3.10", "3.11", "3.12"]
+        os: [ubuntu-latest, macos-latest, windows-latest]
+        exclude:
+          # Run Windows only on primary Python version to save CI minutes
+          - os: windows-latest
+            python-version: "3.9"
+          - os: windows-latest
+            python-version: "3.10"
+          - os: windows-latest
+            python-version: "3.12"
+          # Run macOS only on 3.11 and 3.12
+          - os: macos-latest
+            python-version: "3.9"
+          - os: macos-latest
+            python-version: "3.10"
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: ${{ matrix.python-version }}
+
+      - name: Install uv
+        uses: astral-sh/setup-uv@v3
+        with:
+          enable-cache: true
+          cache-dependency-glob: "pyproject.toml"
+
+      - name: Install dependencies
+        run: uv pip install --system -e ".[dev]"
+
+      - name: Run unit tests
+        run: |
+          pytest tests/unit \
+            --cov=polyai \
+            --cov-report=xml:coverage-${{ matrix.python-version }}-${{ matrix.os }}.xml \
+            --cov-report=term-missing \
+            --tb=short \
+            -v \
+            --durations=10
+
+      - name: Upload coverage artifact
+        uses: actions/upload-artifact@v4
+        if: matrix.os == 'ubuntu-latest'
+        with:
+          name: coverage-${{ matrix.python-version }}
+          path: coverage-${{ matrix.python-version }}-${{ matrix.os }}.xml
+          retention-days: 3
+
+  # ─────────────────────────────────────────────
+  # JOB 3 — Coverage upload (after all tests)
+  # ─────────────────────────────────────────────
+  coverage:
+    name: Upload Coverage
+    needs: test
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    if: github.event_name != 'workflow_dispatch'
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Download all coverage artifacts
+        uses: actions/download-artifact@v4
+        with:
+          pattern: coverage-*
+          merge-multiple: true
+
+      - name: Upload to Codecov
+        uses: codecov/codecov-action@v4
+        with:
+          files: coverage-3.11.xml
+          flags: unit
+          fail_ci_if_error: false
+          token: ${{ secrets.CODECOV_TOKEN }}
+
+  # ─────────────────────────────────────────────
+  # JOB 4 — Build & verify distribution
+  # ─────────────────────────────────────────────
+  build:
+    name: Build Distribution
+    needs: test
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: ${{ env.PYTHON_DEFAULT }}
+
+      - name: Install build tools
+        run: pip install build twine hatch
+
+      - name: Build wheel + sdist
+        run: python -m build
+
+      - name: Verify distribution metadata
+        run: twine check dist/* --strict
+
+      - name: Check wheel contents
+        run: |
+          pip install wheel
+          python -c "
+          import zipfile, sys, glob
+          whl = glob.glob('dist/*.whl')[0]
+          with zipfile.ZipFile(whl) as z:
+              names = z.namelist()
+          # must contain the package
+          assert any('polyai/' in n for n in names), 'Package not found in wheel'
+          # must not contain secrets or .env files
+          bad = [n for n in names if n.endswith(('.env', '.key', '.pem'))]
+          assert not bad, f'Secrets found in wheel: {bad}'
+          print(f'Wheel OK: {len(names)} files')
+          "
+
+      - name: Test installability (fresh venv)
+        run: |
+          python -m venv /tmp/test-venv
+          /tmp/test-venv/bin/pip install dist/*.whl
+          /tmp/test-venv/bin/python -c "
+          import polyai
+          from polyai import Client, AsyncClient
+          print(f'PolyAI {polyai.__version__} imports OK')
+          "
+
+      - name: Upload distribution artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: dist
+          path: dist/
+          retention-days: 7
+
+  # ─────────────────────────────────────────────
+  # JOB 5 — Smoke test (import check on all OS)
+  # ─────────────────────────────────────────────
+  smoke:
+    name: Smoke Test / ${{ matrix.os }}
+    needs: build
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 5
+    strategy:
+      matrix:
+        os: [ubuntu-latest, macos-latest, windows-latest]
+    steps:
+      - uses: actions/download-artifact@v4
+        with:
+          name: dist
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: ${{ env.PYTHON_DEFAULT }}
+
+      - name: Install wheel and smoke-test
+        run: |
+          pip install *.whl
+          python -c "
+          from polyai import Client, AsyncClient, ClientConfig
+          from polyai.exceptions import UniversalAIError
+          from polyai.types import ChatResponse, EmbeddingResponse
+          print('Smoke test passed')
+          "
+
+  # ─────────────────────────────────────────────
+  # Final gate — all required jobs must pass
+  # ─────────────────────────────────────────────
+  ci-gate:
+    name: CI Gate
+    needs: [lint, test, build, smoke]
+    runs-on: ubuntu-latest
+    if: always()
+    steps:
+      - name: Check all jobs passed
+        run: |
+          results='${{ toJSON(needs) }}'
+          echo "$results" | python3 -c "
+          import json, sys
+          data = json.load(sys.stdin)
+          failed = [k for k,v in data.items() if v['result'] not in ('success','skipped')]
+          if failed:
+              print(f'FAILED jobs: {failed}')
+              sys.exit(1)
+          print('All CI jobs passed')
+          "

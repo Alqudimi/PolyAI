@@ -1,0 +1,11 @@
+# PolyAI Funding Configuration
+# See: https://docs.github.com/en/repositories/managing-your-repositorys-settings-and-features/customizing-your-repository/displaying-a-sponsor-button-in-your-repository
+
+github: [Alqudimi]
+
+# Uncomment and configure if applicable:
+# patreon: username
+# open_collective: polyai
+# ko_fi: username
+# liberapay: username
+# custom: ["https://buymeacoffee.com/username"]

@@ -1,0 +1,23 @@
+# PolyAI CODEOWNERS
+# Each line: pattern  →  owner(s) who must review matching changes
+
+# Default — maintainers review everything
+*                               @polyai-sdk/maintainers
+
+# Core SDK
+/polyai/                        @polyai-sdk/maintainers
+/polyai/providers/              @polyai-sdk/maintainers
+/polyai/http/                   @polyai-sdk/maintainers
+/polyai/auth/                   @polyai-sdk/security
+
+# CI/CD — requires two reviewers
+/.github/                       @polyai-sdk/maintainers @polyai-sdk/devops
+/.github/workflows/release.yml  @polyai-sdk/maintainers @polyai-sdk/devops
+/.github/workflows/security.yml @polyai-sdk/security
+
+# Dependencies
+/pyproject.toml                 @polyai-sdk/maintainers
+/.pre-commit-config.yaml        @polyai-sdk/maintainers
+
+# Tests — any maintainer
+/tests/                         @polyai-sdk/maintainers

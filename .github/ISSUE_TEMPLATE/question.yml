@@ -1,0 +1,79 @@
+name: "❓ Question"
+description: "Ask a question about PolyAI usage"
+title: "[Question]: "
+labels: ["question"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Thanks for asking! Before posting, please check:
+        - [FAQ](../../FAQ.md)
+        - [Troubleshooting Guide](../../TROUBLESHOOTING.md)
+        - [Existing questions](https://github.com/Alqudimi/PolyAI/labels/question)
+
+  - type: dropdown
+    id: topic
+    attributes:
+      label: "Topic"
+      description: "What is your question about?"
+      options:
+        - Installation
+        - Authentication / API Keys
+        - Chat completions
+        - Streaming
+        - Async usage
+        - Embeddings
+        - Image generation
+        - Text-to-speech
+        - Function calling
+        - Error handling
+        - Provider selection
+        - Configuration
+        - Contributing
+        - Other
+    validations:
+      required: true
+
+  - type: textarea
+    id: question
+    attributes:
+      label: "Your Question"
+      description: "What would you like to know?"
+      placeholder: "I'm trying to... but I'm not sure how to..."
+    validations:
+      required: true
+
+  - type: textarea
+    id: code
+    attributes:
+      label: "Code (if applicable)"
+      description: "Paste relevant code here"
+      render: python
+
+  - type: input
+    id: version
+    attributes:
+      label: "PolyAI Version"
+      placeholder: "e.g. 1.0.0 (run: python -c \"import polyai; print(polyai.__version__)\")"
+    validations:
+      required: true
+
+  - type: input
+    id: python
+    attributes:
+      label: "Python Version"
+      placeholder: "e.g. 3.11.5"
+    validations:
+      required: true
+
+  - type: checkboxes
+    id: checks
+    attributes:
+      label: "I have checked"
+      options:
+        - label: "[FAQ](../../FAQ.md)"
+          required: true
+        - label: "[Troubleshooting Guide](../../TROUBLESHOOTING.md)"
+          required: true
+        - label: "Existing GitHub Issues and Discussions"
+          required: true
