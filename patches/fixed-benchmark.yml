@@ -1,0 +1,76 @@
+name: Performance Benchmarks
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+  schedule:
+    # Weekly on Sunday at 03:00 UTC
+    - cron: "0 3 * * 0"
+  workflow_dispatch:
+
+permissions:
+  contents: write       # to push benchmark data to gh-pages
+  pull-requests: write  # to comment benchmark delta on PRs
+
+jobs:
+  benchmark:
+    name: Benchmarks
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+
+      - name: Install uv
+        uses: astral-sh/setup-uv@v3
+        with:
+          enable-cache: true
+
+      - name: Install dependencies
+        run: uv pip install --system -e ".[dev]" pytest-benchmark
+
+      - name: Run benchmarks
+        run: |
+          pytest tests/benchmarks \
+            --benchmark-only \
+            --benchmark-json=benchmark-results.json \
+            --benchmark-sort=mean \
+            --benchmark-columns=min,max,mean,stddev,ops \
+            -v
+
+      - name: Check benchmark data exists
+        id: benchcheck
+        run: |
+          if [ ! -s benchmark-results.json ]; then
+            echo "data_available=false" >> "$GITHUB_OUTPUT"
+            echo "::warning::No benchmark data produced — skipping trend tracking"
+          else
+            echo "data_available=true" >> "$GITHUB_OUTPUT"
+          fi
+
+      - name: Upload benchmark results
+        uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: benchmark-results
+          path: benchmark-results.json
+          retention-days: 90
+
+      - name: Store benchmark result for trend tracking
+        uses: benchmark-action/github-action-benchmark@v1
+        if: github.event_name != 'pull_request' && steps.benchcheck.outputs.data_available == 'true'
+        with:
+          name: PolyAI Benchmarks
+          tool: pytest
+          output-file-path: benchmark-results.json
+          github-token: ${{ secrets.GITHUB_TOKEN }}
+          auto-push: true
+          alert-threshold: "125%"
+          comment-on-alert: true
+          fail-on-alert: false
+          alert-comment-cc-users: "@polyai-sdk/maintainers"
