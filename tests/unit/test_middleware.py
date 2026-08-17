@@ -11,7 +11,7 @@ from unittest.mock import MagicMock
 import httpx
 import pytest
 
-from polyai.exceptions import InvalidRequestError, ConnectionError, TimeoutError
+from polyai.exceptions import ConnectionError, InvalidRequestError, ProviderError, TimeoutError
 from polyai.http.transport import SyncTransport
 from polyai.middleware import MiddlewareRegistry, RequestHookPayload, ResponseHookPayload
 
@@ -356,3 +356,142 @@ async def test_async_response_hook_reports_exception():
 
     assert payload_seen["ok"] is False
     assert payload_seen["exc"] == "TimeoutError"
+
+
+def test_response_hook_reports_status_after_successful_retry():
+    """Response hooks must receive the final (successful) status code even
+    when earlier attempts returned retryable errors (429 -> 200)."""
+    registry = MiddlewareRegistry()
+    statuses_seen: list[int] = []
+    registry.on_response(lambda p: statuses_seen.append(p.status_code))
+
+    transport = _make_transport(registry, max_retries=3)
+    responses = [
+        _mock_ok_response({"error": {"message": "rate limit"}}, status=429),
+        _mock_ok_response({"model": "m1"}),
+    ]
+    transport._client.request = MagicMock(side_effect=responses)
+
+    result = transport.request("POST", "chat", json_body={}, provider="ovhcloud")
+
+    assert result == {"model": "m1"}
+    assert statuses_seen == [200]
+
+
+def test_streaming_failure_is_reported_to_hooks():
+    """A failed streaming request must be reported to response hooks with
+    the original exception attached before it is wrapped and re-raised."""
+    registry = MiddlewareRegistry()
+    payload_seen = {}
+    registry.on_response(
+        lambda p: payload_seen.update(
+            {
+                "status": p.status_code,
+                "ok": p.ok,
+                "exc": type(p.exception).__name__ if p.exception else None,
+            }
+        )
+    )
+
+    transport = _make_transport(registry)
+    stream_response = MagicMock(spec=httpx.Response)
+    stream_response.status_code = 200
+    stream_response.iter_lines.side_effect = httpx.TimeoutException("stream died")
+    ctx = MagicMock()
+    ctx.__enter__ = MagicMock(return_value=stream_response)
+    ctx.__exit__ = MagicMock(return_value=False)
+    transport._client.stream = MagicMock(return_value=ctx)
+
+    with pytest.raises(TimeoutError):
+        list(transport.stream("POST", "chat", json_body={}, provider="mlvoca"))
+
+    assert payload_seen["ok"] is False
+    assert payload_seen["exc"] == "TimeoutException"
+    # The tracker captures the status observed before the failure; hooks still
+    # receive an accurate failure report so observers never miss an outage.
+    assert payload_seen["status"] in (0, 200)
+
+
+def test_streaming_http_error_is_reported_to_hooks():
+    """A non-2xx streaming response must surface its status code to hooks
+    together with the raised exception."""
+    registry = MiddlewareRegistry()
+    payload_seen = {}
+    registry.on_response(
+        lambda p: payload_seen.update({"status": p.status_code, "ok": p.ok})
+    )
+
+    transport = _make_transport(registry)
+    stream_response = MagicMock(spec=httpx.Response)
+    stream_response.status_code = 500
+    stream_response.read.return_value = b'{"error": {"message": "internal"}}'
+    ctx = MagicMock()
+    ctx.__enter__ = MagicMock(return_value=stream_response)
+    ctx.__exit__ = MagicMock(return_value=False)
+    transport._client.stream = MagicMock(return_value=ctx)
+
+    with pytest.raises(ProviderError):
+        list(transport.stream("POST", "chat", json_body={}, provider="ovhcloud"))
+
+    assert payload_seen == {"status": 500, "ok": False}
+
+
+@pytest.mark.asyncio
+async def test_async_streaming_dispatches_hooks():
+    """AsyncTransport.stream must invoke request and response hooks around
+    the SSE stream just like the synchronous path."""
+    registry = MiddlewareRegistry()
+    events: list[tuple[str, object, object]] = []
+    registry.on_request(lambda p: events.append(("req", p.method, p.provider)))
+    registry.on_response(lambda p: events.append(("res", p.status_code, p.ok)))
+
+    transport = _make_async_transport(registry)
+
+    class FakeLine:
+        def __init__(self) -> None:
+            self.status_code = 200
+
+        async def __aenter__(self):
+            return self
+
+        async def __aexit__(self, *_exc) -> None:
+            return None
+
+        async def aiter_lines(self):
+            yield "data: hello"
+            yield "data: [DONE]"
+
+    transport._client.stream = MagicMock(return_value=FakeLine())
+
+    lines = []
+    async for line in transport.stream("POST", "chat", json_body={}, provider="mlvoca"):
+        lines.append(line)
+
+    assert lines == ["hello"]
+    assert events == [("req", "POST", "mlvoca"), ("res", 200, True)]
+
+
+def test_registry_clear_removes_all_hooks():
+    """clear() must reset both hook lists to zero."""
+    registry = MiddlewareRegistry()
+    registry.on_request(lambda _p: None)
+    registry.on_request(lambda _p: None)
+    registry.on_response(lambda _p: None)
+    assert registry.request_hook_count == 2
+    assert registry.response_hook_count == 1
+    registry.clear()
+    assert registry.request_hook_count == 0
+    assert registry.response_hook_count == 0
+
+
+def test_response_hook_received_body_after_successful_request():
+    """Successful requests must surface the parsed JSON body to hooks."""
+    registry = MiddlewareRegistry()
+    bodies: list[object] = []
+    registry.on_response(lambda p: bodies.append(p.body))
+
+    transport = _make_transport(registry)
+    transport._client.request = MagicMock(return_value=_mock_ok_response({"id": "chat-1"}))
+    transport.request("GET", "models", provider="pollinations")
+
+    assert bodies == [{"id": "chat-1"}]
