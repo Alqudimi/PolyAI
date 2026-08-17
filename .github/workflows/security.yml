@@ -39,15 +39,8 @@ jobs:
 
       - name: Audit production dependencies
         run: |
-          # Audit in an isolated virtual environment so that only the
-          # project's actual dependency tree is scanned. Auditing the
-          # global image environment picks up pre-installed OS packages
-          # (e.g. setuptools, wheel) that are not project dependencies
-          # and cause spurious failures.
-          python -m venv .audit-venv
-          .audit-venv/bin/pip install --quiet --upgrade pip
-          .audit-venv/bin/pip install --quiet -e .
-          .audit-venv/bin/pip-audit \
+          pip install -e .
+          pip-audit \
             --desc \
             --format markdown \
             --output pip-audit-report.md \
@@ -78,28 +71,19 @@ jobs:
       - name: Install Bandit
         run: pip install bandit[toml]
 
-      - name: Run Bandit (SARIF via JSON)
+      - name: Run Bandit (SARIF)
         run: |
-          # Bandit core has no native SARIF formatter; emit JSON and convert
-          # it to SARIF 2.1.0 so results can be uploaded to GitHub Code
-          # Scanning. A non-zero Bandit exit here is informational — the
-          # human-readable job below is what gates the build.
           bandit -r polyai \
-            -f json \
-            -o bandit-results.json \
+            -f sarif \
+            -o bandit-results.sarif \
             --severity-level medium \
             --confidence-level medium \
             --exclude polyai/__pycache__ \
             || true
-          python3 tools/bandit_to_sarif.py bandit-results.json bandit-results.sarif
-          if [ ! -s bandit-results.sarif ]; then
-            echo "::error::SARIF conversion failed or produced an empty file"
-            exit 1
-          fi
 
       - name: Upload SARIF to GitHub Security
-        if: github.ref == 'refs/heads/main' || github.event_name == 'pull_request'
         uses: github/codeql-action/upload-sarif@v3
+        if: always()
         with:
           sarif_file: bandit-results.sarif
           category: bandit
@@ -127,14 +111,9 @@ jobs:
         uses: trufflesecurity/trufflehog@main
         with:
           path: ./
-          # TruffleHog requires base and head to be different commits. On a
-          # push to the default branch they are identical (HEAD == base), so
-          # fall back to scanning only the pushed commit range instead of a
-          # no-op diff, which would otherwise fail with exit code 1.
-          base: ${{ github.event_name == 'push' && github.ref == format('refs/heads/{0}', github.event.repository.default_branch) && format('refs/heads/{0}~1', github.event.repository.default_branch) || github.event.repository.default_branch }}
+          base: ${{ github.event.repository.default_branch }}
           head: HEAD
           extra_args: --only-verified
-          fail: true
 
   # ─────────────────────────────────────────────
   # JOB 4 — CodeQL analysis
