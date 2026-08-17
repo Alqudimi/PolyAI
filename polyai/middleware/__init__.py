@@ -19,7 +19,7 @@ from __future__ import annotations
 
 import time as _time
 from dataclasses import dataclass, field
-from typing import Any, Callable, Optional
+from typing import Any, Callable
 
 __all__ = [
     "MiddlewareRegistry",
@@ -63,7 +63,7 @@ class RequestHookPayload:
     """Fully resolved request URL (base url + path + params already merged)."""
     provider: str
     """Provider identifier, e.g. ``"ovhcloud"``. May be empty for internal requests."""
-    json_body: Optional[dict[str, Any]]
+    json_body: dict[str, Any] | None
     """The JSON request body, or ``None`` for GET requests."""
 
     extra_headers: dict[str, str] = field(default_factory=dict)
@@ -97,10 +97,10 @@ class ResponseHookPayload:
     """HTTP status code. ``0`` when the request failed before a response."""
     elapsed_seconds: float
     """Wall-clock duration of the request including retries."""
-    body: Optional[dict[str, Any]]
+    body: dict[str, Any] | None
     """Parsed JSON response body, or ``None`` on failure / streaming requests."""
 
-    exception: Optional[BaseException] = None
+    exception: BaseException | None = None
     """Exception raised by the request, or ``None`` on success."""
 
     @property

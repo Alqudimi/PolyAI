@@ -15,14 +15,16 @@ from __future__ import annotations
 import json
 import logging
 import time
-from typing import Any, Dict, Generator, Iterator, Optional, Tuple
+from typing import TYPE_CHECKING, Any
+
+if TYPE_CHECKING:
+    from collections.abc import Generator
 
 import httpx
 
 from polyai._version import __version__
 from polyai.exceptions import (
     ConnectionError,
-    StreamingError,
     TimeoutError,
     _from_http_status,
 )
@@ -34,7 +36,7 @@ logger = logging.getLogger(__name__)
 _SDK_USER_AGENT = f"universal-ai-python/{__version__}"
 
 
-def _safe_headers(headers: Dict[str, str]) -> Dict[str, str]:
+def _safe_headers(headers: dict[str, str]) -> dict[str, str]:
     """Return a copy of headers with auth values masked."""
     out = {}
     for k, v in headers.items():
@@ -63,13 +65,13 @@ class SyncTransport:
         self,
         *,
         base_url: str = "",
-        headers: Optional[Dict[str, str]] = None,
+        headers: dict[str, str] | None = None,
         timeout: float = 60.0,
-        retry_policy: Optional[RetryPolicy] = None,
-        proxy: Optional[str] = None,
+        retry_policy: RetryPolicy | None = None,
+        proxy: str | None = None,
         verify_ssl: bool = True,
-        user_agent: Optional[str] = None,
-        middleware: Optional[MiddlewareRegistry] = None,
+        user_agent: str | None = None,
+        middleware: MiddlewareRegistry | None = None,
     ) -> None:
         self.base_url = base_url.rstrip("/")
         self.timeout = timeout
@@ -79,7 +81,7 @@ class SyncTransport:
         if user_agent:
             ua = f"{ua} {user_agent}"
 
-        default_headers: Dict[str, str] = {
+        default_headers: dict[str, str] = {
             "User-Agent": ua,
             "Accept": "application/json",
             "Content-Type": "application/json",
@@ -87,7 +89,7 @@ class SyncTransport:
         if headers:
             default_headers.update(headers)
 
-        client_kwargs: Dict[str, Any] = {
+        client_kwargs: dict[str, Any] = {
             "headers": default_headers,
             "timeout": httpx.Timeout(timeout),
             "follow_redirects": True,
@@ -108,12 +110,12 @@ class SyncTransport:
         method: str,
         path: str,
         *,
-        json_body: Optional[Dict[str, Any]] = None,
-        params: Optional[Dict[str, Any]] = None,
-        headers: Optional[Dict[str, str]] = None,
-        timeout: Optional[float] = None,
+        json_body: dict[str, Any] | None = None,
+        params: dict[str, Any] | None = None,
+        headers: dict[str, str] | None = None,
+        timeout: float | None = None,
         provider: str = "",
-    ) -> Dict[str, Any]:
+    ) -> dict[str, Any]:
         """Execute a JSON request and return the parsed response body.
 
         Automatically retries on transient errors per the ``RetryPolicy``.
@@ -142,8 +144,8 @@ class SyncTransport:
             params = payload.extra_params
 
         started_at = time.monotonic()
-        tracker: Dict[str, Any] = {"code": 0, "body": None}
-        exception: Optional[BaseException] = None
+        tracker: dict[str, Any] = {"code": 0, "body": None}
+        exception: BaseException | None = None
         try:
             result = self._request_with_retry(
                 method,
@@ -178,13 +180,13 @@ class SyncTransport:
         self,
         method: str,
         url: str,
-        json_body: Optional[Dict[str, Any]],
-        params: Optional[Dict[str, Any]],
-        merged_headers: Dict[str, str],
-        timeout: Optional[float],
+        json_body: dict[str, Any] | None,
+        params: dict[str, Any] | None,
+        merged_headers: dict[str, str],
+        timeout: float | None,
         provider: str,
-        status_tracker: Optional[Dict[str, Any]] = None,
-    ) -> Dict[str, Any]:
+        status_tracker: dict[str, Any] | None = None,
+    ) -> dict[str, Any]:
         """Perform the request with retry handling, returning the parsed JSON.
 
         The optional ``status_tracker`` dict is updated in place with the
@@ -255,9 +257,9 @@ class SyncTransport:
         method: str,
         path: str,
         *,
-        json_body: Optional[Dict[str, Any]] = None,
-        headers: Optional[Dict[str, str]] = None,
-        timeout: Optional[float] = None,
+        json_body: dict[str, Any] | None = None,
+        headers: dict[str, str] | None = None,
+        timeout: float | None = None,
         provider: str = "",
     ) -> Generator[str, None, None]:
         """Execute a streaming request and yield raw SSE line strings.
@@ -286,8 +288,8 @@ class SyncTransport:
             merged_headers.update(payload.extra_headers)
 
         started_at = time.monotonic()
-        tracker: Dict[str, Any] = {"code": 0}
-        exception: Optional[BaseException] = None
+        tracker: dict[str, Any] = {"code": 0}
+        exception: BaseException | None = None
         try:
             with self._client.stream(
                 method,
@@ -315,7 +317,7 @@ class SyncTransport:
 
         except httpx.TimeoutException as exc:
             exception = exc
-            raise TimeoutError(f"Stream timed out", provider=provider) from exc
+            raise TimeoutError("Stream timed out", provider=provider) from exc
         except httpx.NetworkError as exc:
             exception = exc
             raise ConnectionError(f"Stream network error: {exc}", provider=provider) from exc
@@ -340,11 +342,11 @@ class SyncTransport:
         self,
         path: str,
         *,
-        params: Optional[Dict[str, Any]] = None,
-        headers: Optional[Dict[str, str]] = None,
-        timeout: Optional[float] = None,
+        params: dict[str, Any] | None = None,
+        headers: dict[str, str] | None = None,
+        timeout: float | None = None,
         provider: str = "",
-    ) -> Tuple[bytes, str]:
+    ) -> tuple[bytes, str]:
         """GET a binary response. Returns ``(bytes, content_type)``."""
         url = self._build_url(path)
         try:
@@ -365,11 +367,11 @@ class SyncTransport:
         self,
         path: str,
         *,
-        json_body: Optional[Dict[str, Any]] = None,
-        headers: Optional[Dict[str, str]] = None,
-        timeout: Optional[float] = None,
+        json_body: dict[str, Any] | None = None,
+        headers: dict[str, str] | None = None,
+        timeout: float | None = None,
         provider: str = "",
-    ) -> Tuple[bytes, str]:
+    ) -> tuple[bytes, str]:
         """POST and return a binary response. Returns ``(bytes, content_type)``."""
         url = self._build_url(path)
         try:
@@ -390,7 +392,7 @@ class SyncTransport:
         """Close the underlying HTTP client and release connections."""
         self._client.close()
 
-    def __enter__(self) -> "SyncTransport":
+    def __enter__(self) -> SyncTransport:
         return self
 
     def __exit__(self, *_: Any) -> None:
@@ -406,7 +408,7 @@ class SyncTransport:
         return f"{self.base_url}/{path.lstrip('/')}"
 
     @staticmethod
-    def _parse_retry_after(response: httpx.Response) -> Optional[float]:
+    def _parse_retry_after(response: httpx.Response) -> float | None:
         header = response.headers.get("retry-after") or response.headers.get(
             "x-ratelimit-reset-requests"
         )

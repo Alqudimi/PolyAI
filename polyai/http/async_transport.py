@@ -9,7 +9,10 @@ from __future__ import annotations
 import json
 import logging
 import time
-from typing import Any, AsyncGenerator, Dict, Optional, Tuple
+from typing import TYPE_CHECKING, Any
+
+if TYPE_CHECKING:
+    from collections.abc import AsyncGenerator
 
 import httpx
 
@@ -37,13 +40,13 @@ class AsyncTransport:
         self,
         *,
         base_url: str = "",
-        headers: Optional[Dict[str, str]] = None,
+        headers: dict[str, str] | None = None,
         timeout: float = 60.0,
-        retry_policy: Optional[RetryPolicy] = None,
-        proxy: Optional[str] = None,
+        retry_policy: RetryPolicy | None = None,
+        proxy: str | None = None,
         verify_ssl: bool = True,
-        user_agent: Optional[str] = None,
-        middleware: Optional[MiddlewareRegistry] = None,
+        user_agent: str | None = None,
+        middleware: MiddlewareRegistry | None = None,
     ) -> None:
         self.base_url = base_url.rstrip("/")
         self.timeout = timeout
@@ -53,7 +56,7 @@ class AsyncTransport:
         if user_agent:
             ua = f"{ua} {user_agent}"
 
-        default_headers: Dict[str, str] = {
+        default_headers: dict[str, str] = {
             "User-Agent": ua,
             "Accept": "application/json",
             "Content-Type": "application/json",
@@ -61,7 +64,7 @@ class AsyncTransport:
         if headers:
             default_headers.update(headers)
 
-        client_kwargs: Dict[str, Any] = {
+        client_kwargs: dict[str, Any] = {
             "headers": default_headers,
             "timeout": httpx.Timeout(timeout),
             "follow_redirects": True,
@@ -78,12 +81,12 @@ class AsyncTransport:
         method: str,
         path: str,
         *,
-        json_body: Optional[Dict[str, Any]] = None,
-        params: Optional[Dict[str, Any]] = None,
-        headers: Optional[Dict[str, str]] = None,
-        timeout: Optional[float] = None,
+        json_body: dict[str, Any] | None = None,
+        params: dict[str, Any] | None = None,
+        headers: dict[str, str] | None = None,
+        timeout: float | None = None,
         provider: str = "",
-    ) -> Dict[str, Any]:
+    ) -> dict[str, Any]:
         """Execute an async JSON request with retries.
 
         If a ``MiddlewareRegistry`` was supplied at construction time, request
@@ -109,8 +112,8 @@ class AsyncTransport:
             params = payload.extra_params
 
         started_at = time.monotonic()
-        tracker: Dict[str, Any] = {"code": 0, "body": None}
-        exception: Optional[BaseException] = None
+        tracker: dict[str, Any] = {"code": 0, "body": None}
+        exception: BaseException | None = None
         try:
             result = await self._request_with_retry(
                 method,
@@ -145,13 +148,13 @@ class AsyncTransport:
         self,
         method: str,
         url: str,
-        json_body: Optional[Dict[str, Any]],
-        params: Optional[Dict[str, Any]],
-        merged_headers: Dict[str, str],
-        timeout: Optional[float],
+        json_body: dict[str, Any] | None,
+        params: dict[str, Any] | None,
+        merged_headers: dict[str, str],
+        timeout: float | None,
         provider: str,
-        status_tracker: Optional[Dict[str, Any]] = None,
-    ) -> Dict[str, Any]:
+        status_tracker: dict[str, Any] | None = None,
+    ) -> dict[str, Any]:
         """Perform the async request with retry handling, returning parsed JSON."""
         for attempt in range(self.retry_policy.max_retries + 1):
             try:
@@ -199,9 +202,9 @@ class AsyncTransport:
         method: str,
         path: str,
         *,
-        json_body: Optional[Dict[str, Any]] = None,
-        headers: Optional[Dict[str, str]] = None,
-        timeout: Optional[float] = None,
+        json_body: dict[str, Any] | None = None,
+        headers: dict[str, str] | None = None,
+        timeout: float | None = None,
         provider: str = "",
     ) -> AsyncGenerator[str, None]:
         """Execute an async streaming request and yield SSE data lines.
@@ -228,8 +231,8 @@ class AsyncTransport:
             merged_headers.update(payload.extra_headers)
 
         started_at = time.monotonic()
-        tracker: Dict[str, Any] = {"code": 0}
-        exception: Optional[BaseException] = None
+        tracker: dict[str, Any] = {"code": 0}
+        exception: BaseException | None = None
         try:
             async with self._client.stream(
                 method,
@@ -280,11 +283,11 @@ class AsyncTransport:
         self,
         path: str,
         *,
-        params: Optional[Dict[str, Any]] = None,
-        headers: Optional[Dict[str, str]] = None,
-        timeout: Optional[float] = None,
+        params: dict[str, Any] | None = None,
+        headers: dict[str, str] | None = None,
+        timeout: float | None = None,
         provider: str = "",
-    ) -> Tuple[bytes, str]:
+    ) -> tuple[bytes, str]:
         """Async GET binary content. Returns ``(bytes, content_type)``."""
         url = self._build_url(path)
         try:
@@ -306,11 +309,11 @@ class AsyncTransport:
         self,
         path: str,
         *,
-        json_body: Optional[Dict[str, Any]] = None,
-        headers: Optional[Dict[str, str]] = None,
-        timeout: Optional[float] = None,
+        json_body: dict[str, Any] | None = None,
+        headers: dict[str, str] | None = None,
+        timeout: float | None = None,
         provider: str = "",
-    ) -> Tuple[bytes, str]:
+    ) -> tuple[bytes, str]:
         """Async POST binary content. Returns ``(bytes, content_type)``."""
         url = self._build_url(path)
         try:
@@ -332,7 +335,7 @@ class AsyncTransport:
         """Close the underlying async HTTP client."""
         await self._client.aclose()
 
-    async def __aenter__(self) -> "AsyncTransport":
+    async def __aenter__(self) -> AsyncTransport:
         return self
 
     async def __aexit__(self, *_: Any) -> None:
@@ -344,7 +347,7 @@ class AsyncTransport:
         return f"{self.base_url}/{path.lstrip('/')}"
 
     @staticmethod
-    def _parse_retry_after(response: httpx.Response) -> Optional[float]:
+    def _parse_retry_after(response: httpx.Response) -> float | None:
         header = response.headers.get("retry-after") or response.headers.get(
             "x-ratelimit-reset-requests"
         )
