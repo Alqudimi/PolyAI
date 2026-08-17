@@ -1,0 +1,132 @@
+name: Nightly Integration Tests
+
+on:
+  schedule:
+    # Every night at 01:00 UTC
+    - cron: "0 1 * * *"
+  workflow_dispatch:
+    inputs:
+      providers:
+        description: "Providers to test (comma-separated: ovhcloud,pollinations,mlvoca,devtoolbox)"
+        required: false
+        default: "ovhcloud,pollinations,mlvoca,devtoolbox"
+      python_version:
+        description: "Python version"
+        required: false
+        default: "3.11"
+
+permissions:
+  contents: read
+  issues: write       # to open failure issues automatically
+  checks: write       # to publish test results as check runs
+
+env:
+  UNIVERSAL_AI_INTEGRATION_TESTS: "1"
+
+jobs:
+  integration:
+    name: Integration / ${{ matrix.provider }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    environment: integration-tests
+    strategy:
+      fail-fast: false
+      matrix:
+        provider: [ovhcloud, pollinations, mlvoca, devtoolbox]
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: ${{ github.event.inputs.python_version || '3.11' }}
+
+      - name: Install uv
+        uses: astral-sh/setup-uv@v3
+        with:
+          enable-cache: true
+
+      - name: Install dependencies
+        run: uv pip install --system -e ".[dev]"
+
+      - name: Run integration tests — ${{ matrix.provider }}
+        env:
+          OVHCLOUD_API_KEY: ${{ secrets.OVHCLOUD_API_KEY }}
+          POLLINATIONS_API_KEY: ${{ secrets.POLLINATIONS_API_KEY }}
+          DEVTOOLBOX_API_KEY: ${{ secrets.DEVTOOLBOX_API_KEY }}
+        run: |
+          pytest tests/integration/test_${{ matrix.provider }}.py \
+            -v \
+            --tb=long \
+            --timeout=120 \
+            --junit-xml=integration-${{ matrix.provider }}.xml
+
+      - name: Upload JUnit results
+        uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: integration-results-${{ matrix.provider }}
+          path: integration-${{ matrix.provider }}.xml
+          retention-days: 14
+
+      - name: Publish test results
+        uses: dorny/test-reporter@v1
+        if: always()
+        with:
+          name: Integration — ${{ matrix.provider }}
+          path: integration-${{ matrix.provider }}.xml
+          reporter: java-junit
+          fail-on-error: false
+
+  # ─────────────────────────────────────────────
+  # Open a GitHub Issue on nightly failure
+  # ─────────────────────────────────────────────
+  notify-failure:
+    name: Notify on Failure
+    needs: integration
+    runs-on: ubuntu-latest
+    if: failure() && github.event_name == 'schedule'
+    permissions:
+      issues: write
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Create or update failure issue
+        uses: actions/github-script@v7
+        with:
+          script: |
+            const title = `🔴 Nightly integration tests failed — ${new Date().toISOString().slice(0,10)}`;
+            const body = [
+              `**Workflow run:** ${context.serverUrl}/${context.repo.owner}/${context.repo.repo}/actions/runs/${context.runId}`,
+              '',
+              `**Triggered at:** ${new Date().toUTCString()}`,
+              '',
+              'One or more provider integration tests failed in the nightly run.',
+              'Please investigate and fix before the next release.',
+            ].join('\n');
+
+            // Check if an open issue already exists for nightly failures
+            const issues = await github.rest.issues.listForRepo({
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              labels: 'nightly-failure',
+              state: 'open',
+            });
+
+            if (issues.data.length > 0) {
+              // Add a comment to the existing issue
+              await github.rest.issues.createComment({
+                owner: context.repo.owner,
+                repo: context.repo.repo,
+                issue_number: issues.data[0].number,
+                body: body,
+              });
+            } else {
+              await github.rest.issues.create({
+                owner: context.repo.owner,
+                repo: context.repo.repo,
+                title,
+                body,
+                labels: ['nightly-failure', 'bug'],
+              });
+            }

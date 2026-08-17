@@ -7,6 +7,18 @@ Versioning: [Semantic Versioning](https://semver.org/spec/v2.0.0.html)
 
 ## [Unreleased]
 
+### Added
+
+#### Tests
+- Core performance benchmark suite (`tests/benchmarks/`) covering client instantiation, provider resolution, config lookups, message truncation, and token counting — runs fully offline
+
+### Fixed
+
+#### CI/CD
+- Nightly integration workflow: add missing `pytest-timeout` to dev dependencies (fixes `pytest: error: unrecognized arguments: --timeout=120`)
+- Nightly integration workflow: replace `EnricoMi/publish-unit-test-result-action@v2` with `dorny/test-reporter@v1` (the previous action fails every scheduled run with 403 when creating check runs)
+- Performance Benchmarks workflow: guard trend-tracking step against empty benchmark JSON (fixes `Unexpected end of JSON input` when no benchmarks are collected)
+
 ## [1.0.0] — 2026-05-31
 
 ### Added
