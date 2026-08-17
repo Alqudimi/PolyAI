@@ -7,6 +7,22 @@ Versioning: [Semantic Versioning](https://semver.org/spec/v2.0.0.html)
 
 ## [Unreleased]
 
+### Fixed
+
+#### CI / Security workflow
+
+- Fix failing `Security` workflow: the Bandit job now emits JSON and converts
+  it to SARIF 2.1.0 via the new `tools/bandit_to_sarif.py` helper (Bandit core
+  ships no native SARIF formatter), keeping GitHub Code Scanning integration
+  alive.
+- `pip-audit` now runs inside an isolated virtual environment so only the
+  project's actual dependency tree is scanned instead of pre-installed CI
+  image packages that caused spurious audit failures.
+- TruffleHog job no longer fails on pushes to the default branch: when `base`
+  would equal `head`, the base is shifted one commit back so the scan actually
+  covers the pushed changes.
+
+
 ## [1.0.0] — 2026-05-31
 
 ### Added
