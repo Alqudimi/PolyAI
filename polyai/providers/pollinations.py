@@ -125,17 +125,20 @@ class PollinationsProvider(BaseProvider):
         auth_headers: Dict[str, str] = {}
         self._credentials.apply(auth_headers)
 
+        middleware = getattr(config, "middleware", None)
         self._transport = SyncTransport(
             base_url=base_url,
             headers=auth_headers,
             timeout=config.get_timeout("pollinations"),
             retry_policy=retry_policy,
+            middleware=middleware,
         )
         self._async_transport = AsyncTransport(
             base_url=base_url,
             headers=auth_headers,
             timeout=config.get_timeout("pollinations"),
             retry_policy=retry_policy,
+            middleware=middleware,
         )
         # Separate transport for image API (different base)
         self._image_transport = SyncTransport(
@@ -143,12 +146,14 @@ class PollinationsProvider(BaseProvider):
             headers=auth_headers,
             timeout=config.get_timeout("pollinations"),
             retry_policy=retry_policy,
+            middleware=middleware,
         )
         self._async_image_transport = AsyncTransport(
             base_url=_GEN_IMAGE_BASE,
             headers=auth_headers,
             timeout=config.get_timeout("pollinations"),
             retry_policy=retry_policy,
+            middleware=middleware,
         )
 
     # ------------------------------------------------------------------

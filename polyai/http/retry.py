@@ -13,8 +13,7 @@ from __future__ import annotations
 import logging
 import random
 import time
-from dataclasses import dataclass, field
-from typing import Optional, Tuple
+from dataclasses import dataclass
 
 logger = logging.getLogger(__name__)
 
@@ -37,11 +36,11 @@ class RetryPolicy:
     base_delay: float = 0.5
     max_delay: float = 60.0
     jitter: bool = True
-    retry_on_status: Tuple[int, ...] = (429, 500, 502, 503, 504)
+    retry_on_status: tuple[int, ...] = (429, 500, 502, 503, 504)
     retry_on_timeout: bool = True
     retry_on_network: bool = True
 
-    def should_retry(self, attempt: int, status_code: Optional[int] = None, is_network_error: bool = False, is_timeout: bool = False) -> bool:
+    def should_retry(self, attempt: int, status_code: int | None = None, is_network_error: bool = False, is_timeout: bool = False) -> bool:
         """Return True if the request should be retried."""
         if attempt >= self.max_retries:
             return False
@@ -53,7 +52,7 @@ class RetryPolicy:
             return True
         return False
 
-    def wait_time(self, attempt: int, retry_after: Optional[float] = None) -> float:
+    def wait_time(self, attempt: int, retry_after: float | None = None) -> float:
         """Return the number of seconds to wait before the next attempt.
 
         Args:
@@ -71,13 +70,13 @@ class RetryPolicy:
 
         return delay
 
-    def sleep(self, attempt: int, retry_after: Optional[float] = None) -> None:
+    def sleep(self, attempt: int, retry_after: float | None = None) -> None:
         """Block for the computed wait duration."""
         wait = self.wait_time(attempt, retry_after)
         logger.debug("Retrying in %.2f seconds (attempt %d)", wait, attempt + 1)
         time.sleep(wait)
 
-    async def async_sleep(self, attempt: int, retry_after: Optional[float] = None) -> None:
+    async def async_sleep(self, attempt: int, retry_after: float | None = None) -> None:
         """Async-sleep for the computed wait duration."""
         import asyncio
         wait = self.wait_time(attempt, retry_after)

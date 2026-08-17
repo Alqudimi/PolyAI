@@ -46,6 +46,7 @@ class ClientConfig:
         proxy:                HTTP/S proxy URL.
         verify_ssl:           Verify TLS certificates. Default: True.
         log_level:            Logging level ("DEBUG", "INFO", "WARNING", "ERROR").
+        middleware:           Optional ``MiddlewareRegistry`` for request / response hooks.
     """
 
     ovhcloud_api_key: Optional[str] = None
@@ -63,6 +64,8 @@ class ClientConfig:
     verify_ssl: bool = True
 
     log_level: str = "WARNING"
+
+    middleware: Optional[Any] = None
 
     def __post_init__(self) -> None:
         if self.ovhcloud_api_key is None:
@@ -115,6 +118,7 @@ class ClientConfig:
 
     def masked_repr(self) -> str:
         """Return a safe repr with secrets masked — suitable for logs."""
+
         def _mask(v: Optional[str]) -> str:
             if not v:
                 return "(not set)"

@@ -107,10 +107,13 @@ class MlvocaProvider(BaseProvider):
             retry_on_status=(429, 500, 502, 503, 504),
         )
 
+        middleware = getattr(config, "middleware", None)
+
         self._transport = SyncTransport(
             base_url=base_url,
             timeout=config.get_timeout("mlvoca"),
             retry_policy=retry_policy,
+            middleware=middleware,
         )
         self._async_transport = AsyncTransport(
             base_url=base_url,
