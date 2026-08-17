@@ -127,6 +127,7 @@ class OVHcloudProvider(BaseProvider):
         auth_headers: Dict[str, str] = {}
         self._credentials.apply(auth_headers)
 
+        middleware = getattr(config, "middleware", None)
         self._transport = SyncTransport(
             base_url=base_url,
             headers=auth_headers,
@@ -134,6 +135,7 @@ class OVHcloudProvider(BaseProvider):
             retry_policy=retry_policy,
             proxy=config.proxy,
             verify_ssl=config.verify_ssl,
+            middleware=middleware,
         )
         self._async_transport = AsyncTransport(
             base_url=base_url,

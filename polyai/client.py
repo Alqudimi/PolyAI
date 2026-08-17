@@ -147,6 +147,7 @@ class Client:
         devtoolbox_api_key: Optional[str] = None,
         timeout: float = 60.0,
         max_retries: int = 3,
+        middleware: Optional[Any] = None,
         **kwargs: Any,
     ) -> None:
         if config is None:
@@ -156,6 +157,7 @@ class Client:
                 devtoolbox_api_key=devtoolbox_api_key,
                 timeout=timeout,
                 max_retries=max_retries,
+                middleware=middleware,
                 **kwargs,
             )
         self._config = config
@@ -188,8 +190,7 @@ class Client:
             cls = PROVIDER_REGISTRY.get(name)
             if cls is None:
                 raise ProviderNotSupportedError(
-                    f"Unknown provider '{name}'. "
-                    f"Available: {sorted(PROVIDER_REGISTRY.keys())}",
+                    f"Unknown provider '{name}'. " f"Available: {sorted(PROVIDER_REGISTRY.keys())}",
                     provider=name,
                 )
             self._providers[name] = cls(self._config)
@@ -445,7 +446,9 @@ class Client:
     # Models
     # ------------------------------------------------------------------
 
-    def list_models(self, provider: str, *, timeout: Optional[float] = None) -> List[Dict[str, Any]]:
+    def list_models(
+        self, provider: str, *, timeout: Optional[float] = None
+    ) -> List[Dict[str, Any]]:
         """List available models for a provider.
 
         Example::

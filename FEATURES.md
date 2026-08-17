@@ -383,6 +383,32 @@ from polyai.exceptions import (
 
 ---
 
+### ✅ Middleware Hooks (Request / Response Observers)
+
+Plug callbacks into every HTTP request and response for logging, metrics, latency measurement, tracing or testing.
+
+```python
+from polyai import Client
+from polyai.middleware import MiddlewareRegistry
+
+registry = MiddlewareRegistry()
+
+@registry.on_request
+def log_request(payload):
+    payload.set_header("x-request-id", "123")  # inject extra headers / params
+    print("REQ", payload.method, payload.url, payload.provider)
+
+@registry.on_response
+def log_response(payload):
+    print("RES", payload.status_code, f"{payload.elapsed_ms:.0f}ms", "OK" if payload.ok else payload.exception)
+
+client = Client(middleware=registry)  # also works via ClientConfig(middleware=...)
+```
+
+Request and response hooks are dispatched by both `SyncTransport` and `AsyncTransport`, including streaming requests and failed responses. Hook exceptions are logged and swallowed so observers can never break user requests.
+
+---
+
 ### ✅ Model Discovery
 
 List available models from any provider.
@@ -409,4 +435,5 @@ for m in models:
 | Text-to-speech | ❌ | ✅ | ❌ | ❌ |
 | Speech-to-text | ✅ | ❌ | ❌ | ❌ |
 | Async support | ✅ | ✅ | ✅ | ✅ |
+| Middleware hooks | ✅ | ✅ | ✅ | ✅ |
 | Free tier | ✅ | ✅ | ✅ | ✅ |

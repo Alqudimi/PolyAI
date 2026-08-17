@@ -8,6 +8,7 @@ from __future__ import annotations
 
 import json
 import logging
+import time
 from typing import Any, AsyncGenerator, Dict, Optional, Tuple
 
 import httpx
@@ -15,6 +16,7 @@ import httpx
 from polyai._version import __version__
 from polyai.exceptions import ConnectionError, TimeoutError, _from_http_status
 from polyai.http.retry import RetryPolicy
+from polyai.middleware import MiddlewareRegistry, RequestHookPayload, ResponseHookPayload
 
 logger = logging.getLogger(__name__)
 
@@ -26,6 +28,9 @@ class AsyncTransport:
 
     Must be used inside an ``async with`` block, or ``await transport.aclose()``
     must be called when finished.
+
+    Args:
+        middleware:   Optional ``MiddlewareRegistry`` for request / response hooks.
     """
 
     def __init__(
@@ -38,6 +43,7 @@ class AsyncTransport:
         proxy: Optional[str] = None,
         verify_ssl: bool = True,
         user_agent: Optional[str] = None,
+        middleware: Optional[MiddlewareRegistry] = None,
     ) -> None:
         self.base_url = base_url.rstrip("/")
         self.timeout = timeout
@@ -65,6 +71,7 @@ class AsyncTransport:
             client_kwargs["proxy"] = proxy
 
         self._client = httpx.AsyncClient(**client_kwargs)
+        self._middleware = middleware
 
     async def request(
         self,
@@ -77,10 +84,75 @@ class AsyncTransport:
         timeout: Optional[float] = None,
         provider: str = "",
     ) -> Dict[str, Any]:
-        """Execute an async JSON request with retries."""
+        """Execute an async JSON request with retries.
+
+        If a ``MiddlewareRegistry`` was supplied at construction time, request
+        hooks are invoked before the request is sent and response hooks are
+        invoked once the request completes or fails.
+        """
+        middleware = self._middleware
         url = self._build_url(path)
         merged_headers = dict(headers or {})
 
+        if middleware is not None:
+            payload = middleware.dispatch_request(
+                RequestHookPayload(
+                    method=method,
+                    url=url,
+                    provider=provider,
+                    json_body=json_body,
+                    extra_headers={},
+                    extra_params=dict(params or {}),
+                )
+            )
+            merged_headers.update(payload.extra_headers)
+            params = payload.extra_params
+
+        started_at = time.monotonic()
+        tracker: Dict[str, Any] = {"code": 0, "body": None}
+        exception: Optional[BaseException] = None
+        try:
+            result = await self._request_with_retry(
+                method,
+                url,
+                json_body,
+                params,
+                merged_headers,
+                timeout,
+                provider,
+                status_tracker=tracker,
+            )
+            tracker["body"] = result
+            return result
+        except Exception as exc:  # noqa: BLE001 — observers must never break requests
+            exception = exc
+            raise
+        finally:
+            if middleware is not None:
+                middleware.dispatch_response(
+                    ResponseHookPayload(
+                        method=method,
+                        url=url,
+                        provider=provider,
+                        status_code=tracker["code"],
+                        elapsed_seconds=time.monotonic() - started_at,
+                        body=tracker["body"],
+                        exception=exception,
+                    )
+                )
+
+    async def _request_with_retry(
+        self,
+        method: str,
+        url: str,
+        json_body: Optional[Dict[str, Any]],
+        params: Optional[Dict[str, Any]],
+        merged_headers: Dict[str, str],
+        timeout: Optional[float],
+        provider: str,
+        status_tracker: Optional[Dict[str, Any]] = None,
+    ) -> Dict[str, Any]:
+        """Perform the async request with retry handling, returning parsed JSON."""
         for attempt in range(self.retry_policy.max_retries + 1):
             try:
                 response = await self._client.request(
@@ -100,13 +172,19 @@ class AsyncTransport:
                         continue
                     self._raise_for_status(response, provider)
 
-                return response.json()
+                parsed = response.json()
+                if status_tracker is not None:
+                    status_tracker["code"] = response.status_code
+                    status_tracker["body"] = parsed
+                return parsed
 
             except httpx.TimeoutException as exc:
                 if self.retry_policy.should_retry(attempt, is_timeout=True):
                     await self.retry_policy.async_sleep(attempt)
                     continue
-                raise TimeoutError(f"Request timed out after {timeout or self.timeout}s", provider=provider) from exc
+                raise TimeoutError(
+                    f"Request timed out after {timeout or self.timeout}s", provider=provider
+                ) from exc
 
             except httpx.NetworkError as exc:
                 if self.retry_policy.should_retry(attempt, is_network_error=True):
@@ -126,10 +204,32 @@ class AsyncTransport:
         timeout: Optional[float] = None,
         provider: str = "",
     ) -> AsyncGenerator[str, None]:
-        """Execute an async streaming request and yield SSE data lines."""
+        """Execute an async streaming request and yield SSE data lines.
+
+        If a ``MiddlewareRegistry`` was supplied at construction time, request
+        hooks are invoked before the stream starts. Streaming requests report
+        ``status_code`` and ``body=None`` to response hooks.
+        """
+        middleware = self._middleware
         url = self._build_url(path)
         merged_headers = {"Accept": "text/event-stream", **(headers or {})}
 
+        if middleware is not None:
+            payload = middleware.dispatch_request(
+                RequestHookPayload(
+                    method=method,
+                    url=url,
+                    provider=provider,
+                    json_body=json_body,
+                    extra_headers={},
+                    extra_params={},
+                )
+            )
+            merged_headers.update(payload.extra_headers)
+
+        started_at = time.monotonic()
+        tracker: Dict[str, Any] = {"code": 0}
+        exception: Optional[BaseException] = None
         try:
             async with self._client.stream(
                 method,
@@ -138,10 +238,12 @@ class AsyncTransport:
                 headers=merged_headers,
                 timeout=timeout or self.timeout,
             ) as response:
+                tracker["code"] = response.status_code
                 if response.status_code >= 400:
                     body = await response.aread()
-                    self._raise_for_status_raw(response.status_code, body.decode("utf-8", "replace"), provider)
-
+                    self._raise_for_status_raw(
+                        response.status_code, body.decode("utf-8", "replace"), provider
+                    )
                 async for line in response.aiter_lines():
                     line = line.strip()
                     if not line or line.startswith(":"):
@@ -151,11 +253,28 @@ class AsyncTransport:
                         if data == "[DONE]":
                             return
                         yield data
-
         except httpx.TimeoutException as exc:
+            exception = exc
             raise TimeoutError("Stream timed out", provider=provider) from exc
         except httpx.NetworkError as exc:
+            exception = exc
             raise ConnectionError(f"Stream network error: {exc}", provider=provider) from exc
+        except Exception as exc:  # noqa: BLE001 — report stream failures to observers
+            exception = exc
+            raise
+        finally:
+            if middleware is not None:
+                middleware.dispatch_response(
+                    ResponseHookPayload(
+                        method=method,
+                        url=url,
+                        provider=provider,
+                        status_code=tracker["code"],
+                        elapsed_seconds=time.monotonic() - started_at,
+                        body=None,
+                        exception=exception,
+                    )
+                )
 
     async def get_bytes(
         self,
@@ -177,7 +296,9 @@ class AsyncTransport:
             )
             if response.status_code >= 400:
                 self._raise_for_status(response, provider)
-            return response.content, response.headers.get("content-type", "application/octet-stream")
+            return response.content, response.headers.get(
+                "content-type", "application/octet-stream"
+            )
         except httpx.TimeoutException as exc:
             raise TimeoutError("Binary GET timed out", provider=provider) from exc
 
@@ -201,7 +322,9 @@ class AsyncTransport:
             )
             if response.status_code >= 400:
                 self._raise_for_status(response, provider)
-            return response.content, response.headers.get("content-type", "application/octet-stream")
+            return response.content, response.headers.get(
+                "content-type", "application/octet-stream"
+            )
         except httpx.TimeoutException as exc:
             raise TimeoutError("Binary POST timed out", provider=provider) from exc
 
@@ -222,7 +345,9 @@ class AsyncTransport:
 
     @staticmethod
     def _parse_retry_after(response: httpx.Response) -> Optional[float]:
-        header = response.headers.get("retry-after") or response.headers.get("x-ratelimit-reset-requests")
+        header = response.headers.get("retry-after") or response.headers.get(
+            "x-ratelimit-reset-requests"
+        )
         if header:
             try:
                 return float(header)
@@ -242,7 +367,12 @@ class AsyncTransport:
         except Exception:
             body = {}
             message = response.text or f"HTTP {response.status_code}"
-        raise _from_http_status(response.status_code, str(message), provider=provider, body=body if isinstance(body, dict) else {})
+        raise _from_http_status(
+            response.status_code,
+            str(message),
+            provider=provider,
+            body=body if isinstance(body, dict) else {},
+        )
 
     def _raise_for_status_raw(self, status_code: int, text: str, provider: str) -> None:
         try:
@@ -251,4 +381,9 @@ class AsyncTransport:
         except Exception:
             body = {}
             message = text
-        raise _from_http_status(status_code, str(message), provider=provider, body=body if isinstance(body, dict) else {})
+        raise _from_http_status(
+            status_code,
+            str(message),
+            provider=provider,
+            body=body if isinstance(body, dict) else {},
+        )

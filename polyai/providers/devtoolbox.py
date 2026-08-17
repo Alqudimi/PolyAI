@@ -100,11 +100,13 @@ class DevToolboxProvider(BaseProvider):
         extra_headers: Dict[str, str] = {}
         self._credentials.apply(extra_headers)
 
+        middleware = getattr(config, "middleware", None)
         self._transport = SyncTransport(
             base_url=base_url,
             headers=extra_headers,
             timeout=config.get_timeout("devtoolbox"),
             retry_policy=retry_policy,
+            middleware=middleware,
         )
         self._async_transport = AsyncTransport(
             base_url=base_url,

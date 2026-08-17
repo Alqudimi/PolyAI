@@ -7,6 +7,17 @@ Versioning: [Semantic Versioning](https://semver.org/spec/v2.0.0.html)
 
 ## [Unreleased]
 
+### Added
+
+#### Middleware
+- `polyai.middleware` module providing `MiddlewareRegistry` with `on_request` / `on_response` hooks
+- Request hooks can inspect and mutate outgoing requests (inject extra headers or query parameters)
+- Response hooks receive the status code, latency, parsed body and any exception
+- Hooks are dispatched from both `SyncTransport` and `AsyncTransport`, including streaming requests
+- All providers (`ovhcloud`, `pollinations`, `mlvoca`, `devtoolbox`) wire the registry automatically
+- `Client(middleware=...)` and `ClientConfig(middleware=...)` configuration entry points
+- Hook exceptions are logged and swallowed so observers can never break user requests
+
 ## [1.0.0] — 2026-05-31
 
 ### Added
