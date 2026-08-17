@@ -139,7 +139,7 @@ OLLAMA_RESPONSE = {
 }
 
 DEVTOOLBOX_GENERATE_RESPONSE = {"response": "Here is a haiku about coding.", "status": "success"}
-DEVTOOLBOX_SUMMARIZE_RESPONSE = {"summary": "A brief summary of the text."}
+DEVTOOLBOX_SUMMARIZE_RESPONSE = {"model": "devtoolbox-ai", "prompt": "Summarize the following text in a concise form: Long text", "response": "A brief summary of the text."}
 DEVTOOLBOX_TRANSLATE_RESPONSE = {"translation": "Bonjour, monde!"}
 DEVTOOLBOX_EXPLAIN_RESPONSE = {"explanation": "This code reduces an array to a single value."}
-DEVTOOLBOX_REGEX_RESPONSE = {"regex": r"^[a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\.[a-zA-Z]{2,}$"}
+DEVTOOLBOX_REGEX_RESPONSE = {"model": "devtoolbox-ai", "response": "Use the pattern `[a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\\.[a-zA-Z]{2,}` to match email addresses."}
