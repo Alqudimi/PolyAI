@@ -7,21 +7,22 @@ Rate limit: 100,000 requests/day (free), unlimited (premium)
 Platform:   Cloudflare Workers
 
 AI Endpoints (all POST):
-  /ai/generate        — General AI text generation
-  /ai/summarize       — Text summarisation
-  /ai/translate       — Language translation
-  /ai/explain-code    — Code explanation
-  /ai/generate-regex  — Regex generation from natural language
+  /ai/generate        — General AI text generation (prompt, max_tokens)
+  /ai/translate       — Language translation (text, target_lang)
+  /ai/explain-code    — Code explanation (code)
 
-Developer Utility Endpoints (GET/POST, non-AI):
-  /hash/{algorithm}/{input}   — Hash generation (md5, sha1, sha256, …)
+Developer Utility Endpoints (GET, non-AI):
+  /hash?text=&algo=           — Hash generation (md5, sha1, sha256, …)
   /uuid                       — UUID v4 generation
-  /qr?data=&size=             — QR code generation (returns PNG)
+  /qr?text=&size=             — QR code generation (returns PNG)
   /ip                         — Client IP information
-  /color/random               — Random colour
   /password?length=&symbols=  — Secure password generation
-  /base64/encode / /decode    — Base64 encode/decode
-  /lorem-ipsum?paragraphs=    — Lorem Ipsum generation
+  /lorem?paragraphs=          — Lorem Ipsum generation
+
+Note: the upstream API retired ``/ai/summarize``, ``/ai/generate-regex``,
+``/hash/{algo}/{input}`` and ``/lorem-ipsum``. Summarisation and regex
+generation are now implemented on top of the general ``/ai/generate``
+endpoint; hashing and lorem use their current query-param forms.
 
 This adapter maps AI endpoints to the unified SDK chat interface and also
 exposes provider-specific helper methods for the utility endpoints.
@@ -222,6 +223,9 @@ class DevToolboxProvider(BaseProvider):
     def summarize(self, text: str, *, max_length: Optional[int] = None, timeout: Optional[float] = None) -> str:
         """Summarize a block of text using the DevToolbox AI.
 
+        The upstream API retired ``/ai/summarize``; the result is produced by
+        dispatching a summarisation prompt to the general ``/ai/generate`` endpoint.
+
         Args:
             text:       The text to summarize.
             max_length: Maximum summary length in characters.
@@ -230,18 +234,18 @@ class DevToolboxProvider(BaseProvider):
         Returns:
             Summary string.
         """
-        body: Dict[str, Any] = {"text": text}
+        body: Dict[str, Any] = {"prompt": f"Summarize the following text in a concise form: {text}"}
         if max_length:
-            body["max_length"] = max_length
-        data = self._transport.request("POST", "/ai/summarize", json_body=body, timeout=timeout, provider=self.name)
-        return data.get("summary", data.get("result", str(data)))
+            body["max_tokens"] = max(max_length // 4, 32)
+        data = self._transport.request("POST", "/ai/generate", json_body=body, timeout=timeout, provider=self.name)
+        return data.get("response", data.get("result", str(data)))
 
     async def async_summarize(self, text: str, *, max_length: Optional[int] = None, timeout: Optional[float] = None) -> str:
-        body: Dict[str, Any] = {"text": text}
+        body: Dict[str, Any] = {"prompt": f"Summarize the following text in a concise form: {text}"}
         if max_length:
-            body["max_length"] = max_length
-        data = await self._async_transport.request("POST", "/ai/summarize", json_body=body, timeout=timeout, provider=self.name)
-        return data.get("summary", data.get("result", str(data)))
+            body["max_tokens"] = max(max_length // 4, 32)
+        data = await self._async_transport.request("POST", "/ai/generate", json_body=body, timeout=timeout, provider=self.name)
+        return data.get("response", data.get("result", str(data)))
 
     def translate(self, text: str, target_lang: str, *, timeout: Optional[float] = None) -> str:
         """Translate text to a target language.
@@ -297,6 +301,10 @@ class DevToolboxProvider(BaseProvider):
     def generate_regex(self, description: str, *, timeout: Optional[float] = None) -> str:
         """Generate a regex pattern from a natural language description.
 
+        The upstream API retired ``/ai/generate-regex``; the result is produced
+        by dispatching a regex prompt to the general ``/ai/generate`` endpoint
+        and extracting the first backtick-delimited code span.
+
         Args:
             description: Natural language description (e.g. ``"match email addresses"``).
             timeout:     Request timeout override.
@@ -304,20 +312,42 @@ class DevToolboxProvider(BaseProvider):
         Returns:
             Regex pattern string.
         """
-        data = self._transport.request(
-            "POST", "/ai/generate-regex",
-            json_body={"description": description},
-            timeout=timeout, provider=self.name,
-        )
-        return data.get("regex", data.get("pattern", data.get("result", str(data))))
+        body: Dict[str, Any] = {
+            "prompt": (
+                "Generate only a regular expression pattern (no code, no explanation) "
+                f"that satisfies: {description}"
+            ),
+            "max_tokens": 64,
+        }
+        data = self._transport.request("POST", "/ai/generate", json_body=body, timeout=timeout, provider=self.name)
+        raw = data.get("response", data.get("result", str(data)))
+        return self._extract_regex(raw)
 
     async def async_generate_regex(self, description: str, *, timeout: Optional[float] = None) -> str:
-        data = await self._async_transport.request(
-            "POST", "/ai/generate-regex",
-            json_body={"description": description},
-            timeout=timeout, provider=self.name,
-        )
-        return data.get("regex", data.get("pattern", data.get("result", str(data))))
+        body: Dict[str, Any] = {
+            "prompt": (
+                "Generate only a regular expression pattern (no code, no explanation) "
+                f"that satisfies: {description}"
+            ),
+            "max_tokens": 64,
+        }
+        data = await self._async_transport.request("POST", "/ai/generate", json_body=body, timeout=timeout, provider=self.name)
+        raw = data.get("response", data.get("result", str(data)))
+        return self._extract_regex(raw)
+
+    @staticmethod
+    def _extract_regex(raw: str) -> str:
+        """Extract the regex pattern from an AI generation response.
+
+        Prefers the first backtick-delimited inline code span; falls back to
+        the trimmed raw text when no code span is present.
+        """
+        import re as _re
+        text = str(raw).strip()
+        match = _re.search(r"`([^`\n]+)`", text)
+        if match:
+            return match.group(1)
+        return text
 
     # ------------------------------------------------------------------
     # Developer utility helpers (non-AI)
@@ -330,7 +360,9 @@ class DevToolboxProvider(BaseProvider):
             algorithm: Hash algorithm (``"md5"``, ``"sha1"``, ``"sha256"``, etc.).
             input:     String to hash.
         """
-        return self._transport.request("GET", f"/hash/{algorithm}/{input}", timeout=timeout, provider=self.name)
+        return self._transport.request(
+            "GET", "/hash", params={"text": input, "algo": algorithm}, timeout=timeout, provider=self.name,
+        )
 
     def generate_uuid(self, *, timeout: Optional[float] = None) -> str:
         """Generate a UUID v4."""
@@ -349,7 +381,7 @@ class DevToolboxProvider(BaseProvider):
     def lorem_ipsum(self, paragraphs: int = 1, *, timeout: Optional[float] = None) -> str:
         """Generate Lorem Ipsum placeholder text."""
         data = self._transport.request(
-            "GET", "/lorem-ipsum",
+            "GET", "/lorem",
             params={"paragraphs": paragraphs},
             timeout=timeout, provider=self.name,
         )
